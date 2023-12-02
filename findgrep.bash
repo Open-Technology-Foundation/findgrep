@@ -1,6 +1,146 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#The following is a dynamic docstring that uses embedded variables,
+#which are eval-ed by bash_docstring().
+# # findgrep.bash
+#
+#   'findgrep' uses `find` to recursively search for all filenames in
+#   a path that match `-name`, and then uses 'grep' to search for a
+#   specified string within those files. If the string is found, the
+#   filename and 'grep' search output are returned.
+#
+#   'findgrep' can be executed directly as a script, or sourced into
+#   the current shell.
+#
+# ## Usage:
+#   findgrep [find_path [grep_search]] [-options] [-grep_opts ...]
+#
+# ### Parameters:
+#   find_path:
+#     Path to recursively search for files. Defaults to current
+#     directory ($PWD).
+#
+#   grep_search:
+#     The string to search for within the files. Defaults to an empty
+#     string (meaning `grep` is not performed on files).
+#
+#   grep_opts:
+#     Additional options to pass to the `grep` command.
+#
+# ### Options:
+# ```
+#   -n|-name|--name find_name
+#       Where `find_name` is the argument for the `find -name` option
+#       in `find`, such as '*.bash' or '*.py', except for the
+#       keywords 'bash', 'php', 'python', or 'shell'.
+#       (See "Special Find Names" below.)
+#
+#   -C|--usecolor
+#       Force use of ansi colour.
+#   +C|+usecolor
+#       Never use ansi color
+#
+#   -l|--files-with-matches
+#       Only display file names, with no ansi color.
+#
+#   -m|-maxdepth|--maxdepth depth
+#       Where `depth` is the argument for the `find -maxdepth` option.
+#       Default is unlimited.
+#
+#   -v|--verbose
+#       Be verbose
+#   -q|--quiet
+#       Be not verbose
+#
+#   -V|--version
+#       Print version: '$PRGNAME $VERSION'
+#
+#   -h|--help
+#       This `bash_docstring`.(Not available if this script is
+#       `source`d as a function.)
+# ```
+#
+# ## Examples:
+#
+#   ```
+#   findgrep ~/lib -name '*.bash' 'openai' -i
+#
+#   findgrep ~/scripts --name py '__main__' -m1
+#
+#   findgrep . '__main__' -name '*' -m1
+#
+#   findgrep . -n shell 'trim ' >/tmp/funcs_using_trim
+#
+#   findgrep /ai/scripts/lib -n shell 'trim ' -ql
+#
+#   ```
+#
+# ## Dependencies:
+#   $DEPENDENCIES
+#
+# ## Error Handling:
+#   The script exits if any command returns a non-zero status, if any
+#   variable is us before being set, or if any part of a pipeline
+#   fails.
+#
+# ## Special Find Names:
+#   If 'find_name' equals 'bash', 'php', 'python', or 'shell', then
+#   'findgrep' will search all text files regardless of extension for
+#   the presense of an appropriate hashbang (#!/(*) or <?(*)) for a
+#   range of file extensions related to those types of files.
+#
+#   Note that use of these keyword names will incur additional
+#   processing overhead.
+#
+#   bash: matches files with file extension .bash|.sh, or files with
+#   hashbangs containing /bash|/sh.
+#
+#   shell: matches files with file extension .bash|.sh|.zsh, or files
+#   with hashbangs containing /bash|/sh|/zsh.
+#
+#   python: matches files with file extension .py|.python, or files
+#   with hashbangs containing /python.
+#
+#   php: matches files with file extension .php, or files with
+#   hashbangs containing /php, or files with a header starting
+#   with '<?php'.
+#
+# ### Author: $AUTHOR, $ORGANIZATION
+#
+# ### Updated: $UPDATED
+#
+# ### Version: $VERSION
+#
+# ### Repository: $REPOSITORY
+#
+# ### Licence: $LICENCE
+#
 
+usage() {
+  echo "$PRGNAME $VERSION"
+  echo " Desc: $DESCRIPTION"
+  echo "Usage: $USAGE"
+  exit
+}
 findgrep() {
+  # #canonical Provenence Globals for scripts
+  declare -r  PRGNAME="${FUNCNAME[0]}" \
+              VERSION='0.4.20' \
+              UPDATED='2023-11-30' \
+              AUTHOR='Gary Dean' \
+              ORGANISATION='Open Technology Foundation' \
+              LICENSE='GPL3' \
+              DESCRIPTION='find and grep files at the same time.' \
+              DEPENDENCIES='find grep'
+  declare -r  USAGE="$PRGNAME [find_path [grep_search]] [-options] [-grep_opts ...]" \
+              REPOSITORY="https://github.com/Open-Technology-Foundation/${PRGNAME}"
+  declare -n  ORGANIZATION=ORGANISATION AUTHORS=AUTHOR LICENCE=LICENSE
+
+  # semantic helper functions equivalent to `echo`
+  msg()      { echo -n "${PRGNAME}: "; echo "$@"; }
+  msg.info() { >&2 msg 'info:'  "$@"; }
+  msg.err()  { >&2 msg 'error:' "$@"; }
+  msg.die()  { >&2 msg 'die:'   "$@"; exit 1; }
+
   # findgrep find_path grep_search [gopts...]
   local -i usecolour=0
   local -- colour=auto
@@ -39,30 +179,33 @@ findgrep() {
                     usecolour=0
                     colour=never
                     gopts+=( '--color=never' '--files-with-matches' ) ;;
-    -L|-maxdepth)   shift
+    -m|-maxdepth)   shift
                     (($#)) && fopts[MD]="$1" ;;
     -v|--verbose)   verbose=1 ;;
     -q|--quiet)     verbose=0 ;;
-    -V|--version)   echo "${FUNCNAME[0]} vs $version"; return 0 ;;
-    -h|--help)      usage; return 0 ;;
-    -[ClLvqVh]*)    #shellcheck disable=SC2046 # expand aggregated short options
+    -V|--version)   echo "$PRGNAME $VERSION"; return 0 ;;
+    -h|--help)      bash_docstring -e "$0"; return 0 ;;
+    -[nClLvqVh]*)   #shellcheck disable=SC2046 # expand aggregated short options
                     set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
                     ;;
     -*)             gopts+=( "$1" ) ;;
     *)              args+=( "$1" ) ;;
   esac; shift; done
 
+  # Examine the arguments.
+  #   no more than 2: find_path and grep_search.
   ((${#args[@]})) && {
     find_path="${args[0]}"
     ((${#args[@]} > 1)) && {
       grep_search="${args[1]}"
       ((${#args[@]} > 2)) && {
-        >&2 echo "${FUNCNAME[0]}: Too many arguments."
-        return 1
+        msg.die 'Too many arguments.'
       }
     }
   }
 
+  # Process the find_names
+  #   check for special keywords, else send to find as is.
   local -a file_paths=()
   # bash -----------------
   if [[ $find_name == 'bash' ]]; then
@@ -70,7 +213,7 @@ findgrep() {
     ((DEBUG)) && {
       >&2 echo "---$LINENO: $(declare -p file_paths fopts)";
       >&2 declare -p find_name fopts gopts
-      >&2 echo "find \"$find_path\" ${fopts[@]}"
+      >&2 echo "find -L -O3 \"$find_path\" ${fopts[@]} -exec readlink -f \"{}\" \; |sort -u"
     }
     local -- fext
     while read -r fext; do
@@ -78,7 +221,7 @@ findgrep() {
           && { file_paths+=( "$fext" ); continue; }
       [[ $(_head1 "$fext") =~ ^\#\!.*(/bash|/sh) ]] \
           && file_paths+=( "$fext" )
-    done < <(find "$find_path" "${fopts[@]}" )
+    done < <(find -L -O3 "$find_path" "${fopts[@]}"  -exec readlink -f "{}" \; |sort -u)
   # shell ----------------
   elif [[ $find_name == 'shell' ]]; then
     find_name='*'
@@ -87,7 +230,7 @@ findgrep() {
           && { file_paths+=( "$REPLY" ); continue; }
       [[ $(_head1 "$REPLY") =~ ^\#\!.*(/bash|/sh|/zsh) ]] \
           && file_paths+=( "$REPLY" )
-    done < <(find "$find_path" "${fopts[@]}")
+    done < <(find -L -O3 "$find_path" "${fopts[@]}" -exec readlink -f "{}" \; |sort -u)
   # py -------------------
   elif [[ $find_name == 'py' || $find_name == 'python' ]]; then
     find_name='*'
@@ -96,7 +239,7 @@ findgrep() {
           && { file_paths+=( "$REPLY" ); continue; }
       [[ $(_head1 "$REPLY") =~ ^\#\!.*(/python|/py) ]] \
           && file_paths+=( "$REPLY" )
-    done < <(find "$find_path" "${fopts[@]}")
+    done < <(find -L -O3 "$find_path" "${fopts[@]}" -exec readlink -f "{}" \; |sort -u)
   # php ------------------
   elif [[ $find_name == 'php' ]]; then
     find_name='*'
@@ -106,16 +249,17 @@ findgrep() {
       [[ $(_head1 "$REPLY") =~ ^\#\!.*(/php) ]] \
         || [[ $(_head1 "$REPLY") =~ ^\<\? ]] \
           && file_paths+=( "$REPLY" )
-    done < <(find "$find_path" "${fopts[@]}")
+    done < <(find -L -O3 "$find_path" "${fopts[@]}" -exec readlink -f "{}" \; |sort -u)
 
   # default --------------
   else
-    ((DEBUG > 1)) && >&2 declare -p find_path fopts
-    readarray -t file_paths < <(eval find "$find_path" ${fopts[@]})
+    readarray -t file_paths < <(
+      find -L -O3 "$find_path" "${fopts[@]}" -exec readlink -f "{}" \; |sort -u
+    )
   fi
 
   ((${#file_paths[@]})) || {
-    >&2 echo "${FUNCNAME[0]}: 0 files found."
+    ((verbose)) && >&2 msg '0 files found.'
     return 1
   }
 
@@ -141,7 +285,7 @@ findgrep() {
       grep --line-number -s --colour="$colour" ${gopts[*]} "$grep_search" "$file" | "${indent[@]}"
     fi
   done
-  ((verbose)) && >&2 echo "${FUNCNAME[0]}: $filecount file$( ((filecount!=1)) && echo 's')"
+  ((verbose)) && >&2 msg "$filecount file$( ((filecount!=1)) && echo 's')"
 }
 declare -fx findgrep
 
@@ -158,85 +302,103 @@ _head1 () {
 }
 declare -fx _head1
 
-# Run as script if not sourced
+bash_docstring ()
+{
+    declare -r PRGNAME="${FUNCNAME[0]}" VERSION='0.4.20' UPDATED='2023-11-30' AUTHOR='Gary Dean' ORGANISATION='Open Technology Foundation' LICENSE='GPL3' DESCRIPTION='Docstrings for Bash.' DEPENDENCIES='Bash >= 5';
+    declare -r USAGE="$PRGNAME [-e] [source_file [function_name]]" REPOSITORY="https://github.com/Open-Technology-Foundation/${PRGNAME}";
+    declare -n ORGANIZATION=ORGANISATION AUTHORS=AUTHOR LICENCE=LICENSE;
+    local -i _eval=0;
+    local -a _arg=();
+    while (($#)); do
+        case "$1" in
+            -e | --eval)
+                _eval=1
+            ;;
+            +e | --no-eval)
+                _eval=0
+            ;;
+            -V | --version)
+                echo "$PRGNAME $VERSION";
+                return 0
+            ;;
+            -h | --help)
+                bash_docstring -e '' "${FUNCNAME[0]}" | /usr/bin/less -R -FXRS;
+                return 0
+            ;;
+            -[eVh]*)
+                set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
+            ;;
+            -? | --*)
+                echo "${FUNCNAME[0]}: error: Invalid option '$1'" 1>&2;
+                return 22
+            ;;
+            *)
+                ((${#_arg[@]} > 2)) && {
+                    echo "${FUNCNAME[0]}: error: Invalid argument '$1'" 1>&2;
+                    return 2
+                };
+                _arg+=("$1")
+            ;;
+        esac;
+        shift;
+    done;
+    local -- input_from="${PRG0:-"${0:-}"}";
+    ((${#_arg[@]} > 0)) && ((${#_arg[0]})) && input_from="${_arg[0]}";
+    [[ -f "$input_from" ]] || {
+        echo "${FUNCNAME[0]}: error: Source file '$input_from' not found" 1>&2;
+        return 1
+    };
+    local -- input_from_base="${input_from##*/}";
+    local -- funcname='';
+    ((${#_arg[@]} > 1)) && funcname="${_arg[1]}";
+    funcname="${funcname//[ \(\)]/}";
+    local -- ofuncname="$funcname";
+    local -- ln;
+    while IFS= read -r ln; do
+        [[ "${ln:0:2}" == '#!' ]] && continue;
+        ln="${ln#"${ln%%[![:blank:]]*}"}";
+        ln="${ln%"${ln##*[![:blank:]]}"}";
+        [[ -z "$ln" ]] && continue;
+        if [[ -n "$funcname" ]]; then
+            [[ $ln =~ ^(function[[:blank:]]+)?$funcname[[:blank:]]*\(\) ]] && funcname='';
+            continue;
+        fi;
+        [[ ${ln:0:1} == '#' ]] || return 0;
+        [[ $ln == '#' ]] && {
+            echo;
+            continue
+        };
+        [[ ${ln:0:2} == '# ' ]] || continue;
+        [[ $ln == *'shellcheck'* ]] && continue;
+        if ((_eval)); then
+            ln="${ln//\"/\\\"}";
+            ln="${ln//\`/\\\`}";
+            ln="${ln//\$\(/\\\$ \(}";
+            [[ "${ln:2:1}" == '-' ]] && ln="#  ${ln:2}";
+            eval "echo \"${ln:2}\"";
+        else
+            [[ "${ln:2:1}" == '-' ]] && ln="#  ${ln:2}";
+            echo "${ln:2}";
+        fi;
+    done < "$input_from";
+    echo "${FUNCNAME[0]}: error: Bash docstring not found for $input_from_base:${ofuncname:-'script'}" 1>&2;
+    return 1
+}
+declare -fx bash_docstring
+
+# Run as script if not sourced ==================================
+# #canonical Test for source/script
 [[ "${BASH_SOURCE[0]:-}" == "$0" ]] && {
+  # #canonical SET options for command scripts.
   set -euo pipefail
-  [[ -v DEBUG ]] || declare -i DEBUG=0
-  DEBUG=$((DEBUG)); ((DEBUG>1)) && { PS4='+ $LINENO: '; set -xv; }
 
-  (($# == 0)) || [[ " $* " =~ " -h " ]] || [[ " $* " =~ " --help " ]] && {
-    cat <<'EOT'
-findgrep.bash:
-  'findgrep' uses 'find' to recursively search for all filenames in a
-   path that match -name, and then uses 'grep' to search for a
-   specified string within those files. If the string is found, the
-   filename and 'grep' search output are returned.
+  # #canonical DEBUG setup
+  # (use of -g is deliberate; no time to explain; trust me.)
+  # force any existing DEBUG to int
+  declare -ixg DEBUG=${DEBUG:-0}
+  # DEBUG>1 sets -xv and PS4
+  ((DEBUG>1)) && { declare -xg PS4='+ $LINENO: '; set -xv; }
 
-  'findgrep' can be executed directly as a script, or sourced into
-   the current shell.
-
-Usage: findgrep [find_path [grep_search]] [-grep_opts ...]
-
-Parameters:
-  find_path: The path in which to search for files.
-    Defaults to the current directory.
-
-  grep_search: The string to search for within the files.
-    Defaults to an empty string (meaning 'grep' not preformed).
-
-  grep_opts: Additional options to pass to the 'grep' command.
-
-Examples:
-  findgrep ~/dv --name '*' 'openai' -i
-
-  findgrep ~/scripts --name '*.py' '__main__' -m1
-
-  findgrep . '__main__' -name '*' -m1
-
-  findgrep . -n shell 'trim ' >/tmp/funcs_using_trim
-
-  findgrep ~ shell 'trim ' >/tmp/funcs_with_trim
-
-Dependencies:
-  This script requires the 'grep' and 'find' commands to be
-  available on the system.
-
-Error Handling:
-  The script exits if any command returns a non-zero status, if any
-  variable is us before being set, or if any part of a pipeline
-  fails.
-
-Note:
-  If 'find_name' equals 'bash', 'php', 'python', or 'shell', then
-  'findgrep' will search all text files regardless of extension for
-  the presense of an appropriate hashbang (#!/(*) or <?(*)) for a
-  range of file extensions related to those types of files.
-
-  Note that use of these keyword names will incur additional
-  processing overhead.
-
-  bash: matches files with file extension .bash|.sh, or files with
-  hashbangs containing /bash|/sh.
-
-  shell: matches files with file extension .bash|.sh|.zsh, or files
-  with hashbangs containing /bash|/sh|/zsh.
-
-  python: matches files with file extension .py|.python, or files with
-  hashbangs containing /python.
-
-  php: matches files with file extension .php, or files with
-  hashbangs containing /php, or files with a header starting
-  with '<?php'.
-
-Author: Gary Dean, Open Technology Foundation
-
-Date: 2023-11-07
-
-Version: 0.4.20
-
-EOT
-    exit 0
-  }
   findgrep "$@"
 }
 
